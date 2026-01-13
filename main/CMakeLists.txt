@@ -1,0 +1,20 @@
+idf_component_register(SRCS
+                       "main.c"
+                       "Inf/Inf_key.c"
+                       "Inf/Inf_ES8311.c"
+                       "Dri/Driver_WIFI.c"                       
+                       "Dri/Driver_MQTT.c"                       
+                       "Dri/Driver_WebSocket.c"
+                       "App/App_Communication.c"
+                       "App/App_Bell.c"
+                       "Inf/Inf_Lcd.c"
+                       "Inf/Inf_Camera.c"
+                    INCLUDE_DIRS
+                    "Common"
+                     "Inf"
+                     "Dri"
+                     "App"
+                     "." 
+                     EMBED_FILES 
+                       "dingdong.pcm"                   
+                     )

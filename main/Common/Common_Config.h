@@ -1,0 +1,14 @@
+#ifndef __COMMON_CONFIG_H__
+#define __COMMON_CONFIG_H__
+
+
+typedef enum{
+    CLIENT_2_ESP_AUDIO_ON,
+    CLIENT_2_ESP_AUDIO_OFF,
+    ESP_2_CLIENT_AUDIO_ON,
+    ESP_2_CLIENT_AUDIO_OFF,
+    ESP_2_CLIENT_VIDEO_ON,
+    ESP_2_CLIENT_VIDEO_OFF,
+}WebSocketStatus;
+
+#endif /* __COMMON_CONFIG_H__ */
