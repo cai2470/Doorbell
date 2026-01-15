@@ -15,5 +15,8 @@
     "--compile-commands-dir=d:\\workspace\\ESP32_Project\\Doorbell\\build"
   ],
   "idf.portWin": "COM19",
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "idf.espIdfPathWin": "d:\\Espressif\\frameworks\\esp-idf-v5.5.2",
+  "idf.toolsPathWin": "D:\\Espressif",
+  "idf.pythonInstallPath": "D:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }

@@ -12,6 +12,7 @@
 #include "Common_Debug.h"
 #include "esp_log.h"
 #include "Inf_Camera.h"
+#include "Inf_Camera.h"
 
 
 // 如果你以后要用按键重置功能，记得把按键的头文件也加进来

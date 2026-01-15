@@ -13,9 +13,9 @@ static const char *TAG_APP = "APP_COM";
 #endif
 
 // 定义传输的接口
-#define VIDEO_WEBSOCKET_URI "ws://192.168.54.29:8000/ws/image"                    // 视频流的传输地址
-#define AUDIO_VISITOR_WEBSOCKET_URI "ws://192.168.54.29:8000/ws/from_esp/visitor" // 访客音频（ESP说 -> 网页听
-#define AUDIO_MASTER_WEBSOCKET_URI "ws://192.168.54.29:8000/ws/from_esp/master"   // 主人音频（网页说 -> ESP听
+#define VIDEO_WEBSOCKET_URI "ws://192.168.1.3:8000/ws/image"                    // 视频流的传输地址
+#define AUDIO_VISITOR_WEBSOCKET_URI "ws://192.168.1.3:8000/ws/from_esp/visitor" // 访客音频（ESP说 -> 网页听
+#define AUDIO_MASTER_WEBSOCKET_URI "ws://192.168.1.3:8000/ws/from_esp/master"   // 主人音频（网页说 -> ESP听
 
 // 定义环形缓冲区大小：16k采样率 * 2字节(16bit) * 0.2秒 = 约6KB
 // 建议给 8KB 或 10KB，保证网络卡顿时有足够缓冲
@@ -50,9 +50,16 @@ static void App_Communication_AudioReceiveTaskFunc(void *pvParameters);
 // 创建音频发送任务函数
 static void App_Communication_AudioSendTaskFunc(void *pvParameters);
 
+static void App_Communication_VideoTaskFunc(void *pvParameters);
+
+// 创建一个视频任务函数
+static TaskHandle_t videoTaskHandle = NULL;
+static volatile bool is_video_active = false; // 控制视频开关
+
 /* --- 1. 初始化入口 --- */
 void App_Communication_Init(void)
 {
+
     ESP_LOGI(TAG_APP, "通信模块正在初始化...");
 
     // [步骤 A] 先注册 WiFi 连接成功的回调
@@ -73,6 +80,10 @@ void App_Communication_Init(void)
     // [步骤 C] 启动 WiFi
     // 启动后，它会自动去连网。一旦连上，就会触发上面的 OnWifiConnected
     Driver_WIFI_Init();
+    Inf_Camera_Init();
+
+    // camera初始化
+    // Inf_Camera_Init();
 
     // 创建MQTT任务，用来处理MQTT消息，比如收到指令后开启或关闭音视频传输
     xTaskCreate(App_Communication_MqttTaskFunc, "MqttTask", 4096, NULL, 5, &mqttHandle);
@@ -219,7 +230,9 @@ static void App_Communication_MqttTaskFunc(void *pvParameters)
             /* --- 音频上行 (ESP说 -> 网页听) --- */
         case ESP_2_CLIENT_AUDIO_ON:
             ESP_LOGE(TAG_APP, "指令: 开启访客音频 (ESP->Web)");
+
             Inf_ES8311_Open(); // 打开ES8311解码器
+
             // 连接 WebSocket
             if (!Driver_Websocket_IsConnected(&audio_visitor_ws_client))
             {
@@ -250,7 +263,7 @@ static void App_Communication_MqttTaskFunc(void *pvParameters)
                 xTaskCreate(App_Communication_AudioSendTaskFunc, "AudioSendTask", 4096, NULL, 5, &senderTaskHandle);
             }
             break;
-            break;
+
         case ESP_2_CLIENT_AUDIO_OFF:
             ESP_LOGE(TAG_APP, "指令: 关闭访客音频 (ESP->Web)");
             // 1. 停止标志位
@@ -265,7 +278,9 @@ static void App_Communication_MqttTaskFunc(void *pvParameters)
                 audio_ring_buf = NULL;
             }
             Driver_Websocket_Close(&audio_visitor_ws_client);
+
             Inf_ES8311_Close(); // 计数器-1
+
             break;
 
             /* --- 音频下行 (网页说 -> ESP听) --- */
@@ -275,15 +290,20 @@ static void App_Communication_MqttTaskFunc(void *pvParameters)
 
             if (!Driver_Websocket_IsConnected(&audio_master_ws_client))
             {
+
                 Inf_ES8311_Open(); // 打开ES8311解码器
+
                 Driver_Websocket_Open(&audio_master_ws_client);
             }
 
             break;
         case CLIENT_2_ESP_AUDIO_OFF:
             ESP_LOGE(TAG_APP, "指令: 关闭主人音频 (Web->ESP)");
-            Driver_Websocket_Close(&audio_master_ws_client);
+
             Inf_ES8311_Close(); // 计数器-1
+
+            Driver_Websocket_Close(&audio_master_ws_client);
+
             break;
 
             /* --- 视频流 --- */
@@ -294,10 +314,21 @@ static void App_Communication_MqttTaskFunc(void *pvParameters)
             {
                 Driver_Websocket_Open(&video_ws_client);
             }
+            // 启动视频任务
+            if (!is_video_active)
+            {
+                is_video_active = true;
+                xTaskCreate(App_Communication_VideoTaskFunc, "VideoTask", 8192, NULL, 5, &videoTaskHandle);
+            }
+
             break;
         case ESP_2_CLIENT_VIDEO_OFF:
             ESP_LOGE(TAG_APP, "指令: 关闭视频流");
+            // 1. 停止标志位，让任务跳出 while 循环并自杀
+            is_video_active = false;
+            vTaskDelay(pdMS_TO_TICKS(100));
             Driver_Websocket_Close(&video_ws_client);
+
             break;
         default:
             break;
@@ -353,7 +384,7 @@ static void App_Communication_AudioReceiveTaskFunc(void *pvParameters)
 }
 
 /* --- 任务 B：消费者 (从环形缓冲区 -> WebSocket) --- */
-void App_Communication_AudioSendTaskFunc(void *pvParameters)
+static void App_Communication_AudioSendTaskFunc(void *pvParameters)
 {
 
     size_t item_size;
@@ -383,4 +414,67 @@ void App_Communication_AudioSendTaskFunc(void *pvParameters)
     }
 
     vTaskDelete(NULL); // 任务自杀
+}
+
+/* --- 任务 C：视频流任务 --- */
+/* --- 任务 C：视频流任务 (带调试日志版) --- */
+static void App_Communication_VideoTaskFunc(void *pvParameters)
+{
+    ESP_LOGI(TAG_APP, "📹 视频流任务启动 (堆栈剩余: %d)", uxTaskGetStackHighWaterMark(NULL));
+
+    uint8_t *img_data = NULL;
+    size_t img_len = 0;
+    int fail_count = 0; // 记录连续失败次数
+
+    while (is_video_active)
+    {
+        // 1. 获取一张图片
+        Inf_Camera_GetImage(&img_data, &img_len);
+
+        // --- 🔍 [调试诊断] ---
+        if (img_len > 0) {
+            // 成功拿到数据
+            if (fail_count > 0) {
+                ESP_LOGI(TAG_APP, "✅ 摄像头恢复! 当前帧大小: %d 字节", img_len);
+                fail_count = 0;
+            }
+            // 为了防止刷屏，每隔 50 帧打印一次，或者只在出错恢复时打印
+            // ESP_LOGI(TAG_APP, "📸 抓图成功: %d bytes", img_len); 
+        } else {
+            // 获取失败
+            fail_count++;
+            if (fail_count % 20 == 1) { // 每失败20次打印一次，防止刷屏
+                ESP_LOGE(TAG_APP, "⚠️ 摄像头获取图像失败! Len=0 (已失败 %d 次)", fail_count);
+                ESP_LOGE(TAG_APP, "   -> 检查 PSRAM 是否开启?");
+                ESP_LOGE(TAG_APP, "   -> 检查 I2C 是否被音频驱动干扰?");
+            }
+        }
+        // -------------------
+
+        // 2. 发送给 WebSocket
+        if (img_data != NULL && img_len > 0)
+        {
+            if (Driver_Websocket_IsConnected(&video_ws_client))
+            {
+                // 发送数据
+                esp_websocket_client_send_bin(video_ws_client, (const char *)img_data, img_len, portMAX_DELAY);
+            }
+            else 
+            {
+                // 如果图片拿到了，但 socket 没连上，打印一下
+                static int connect_warn = 0;
+                if (connect_warn++ % 50 == 0) ESP_LOGW(TAG_APP, "📡 视频Socket未连接，丢弃当前帧");
+            }
+
+            // 3. 【关键】回收图片内存
+            Inf_Camera_Return();
+        }
+
+        // 4. 控制帧率 (30ms = ~33fps)
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+
+    ESP_LOGI(TAG_APP, "📹 视频流任务退出");
+    videoTaskHandle = NULL;
+    vTaskDelete(NULL);
 }

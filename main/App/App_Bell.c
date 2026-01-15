@@ -30,7 +30,7 @@ void App_Bell_Init(void)
 {
 
     // 给按键1注册事件回调
-    Inf_key_RegisterKey1Callbacks(BUTTON_SINGLE_CLICK, App_Bell_KeyCallback, (void*)KEY1);
+    Inf_key_RegisterKey1Callbacks(BUTTON_SINGLE_CLICK, App_Bell_KeyCallback, (void *)KEY1);
     // 初始化ES8311
     Inf_ES8311_Init();
 }

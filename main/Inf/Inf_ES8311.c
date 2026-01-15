@@ -18,6 +18,10 @@
 #define DO_PIN 6
 #define PA_EN_PIN 7
 
+
+// 增加一个标记，记录硬件是否已经初始化过
+static bool is_hardware_initialized = false;
+
 // 定义一个静态变量来记录有几个模块正在使用音频
 static int s_audio_usage_count = 0;
 
@@ -133,6 +137,8 @@ void Inf_ES8311_SetVolume(int volume)
 
     esp_codec_dev_set_out_vol(play_dev, volume);
 }
+
+
 
 void Inf_ES8311_Open(void)
 {

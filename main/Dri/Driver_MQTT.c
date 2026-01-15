@@ -8,7 +8,7 @@ static const char *TAG = "MQTT_DRI";
 // 1. 协议头改成 ws://
 // 2. 端口改成你刚才在 conf 里配置的 8083
 // 3. 后面通常要加 /mqtt 路径 (Mosquitto 默认通常是 / 或 /mqtt)
-#define BROKER_URI "ws://192.168.54.29:8083/mqtt"
+#define BROKER_URI "ws://192.168.1.3:8083/mqtt"
 
 /* --- 内部变量 --- */
 static esp_mqtt_client_handle_t s_client = NULL; // MQTT 客户端句柄
